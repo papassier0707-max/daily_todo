@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>タスク管理アプリ</title>
+    <style>
+        /* 🎨 デザインの色を変更したい場合は、ここ（CSS）のカラーコードを書き換えます */
+        :root {
+            --bg-color: #f1f5f9;       /* 全体の背景（薄いグレーブルー） */
+            --card-bg: #ffffff;        /* 各パネルの背景（白） */
+            --primary-color: #191970;   /* メインカラー・ボタン（インディゴブルー） */
+            --primary-hover: #4338ca;   /* ボタンを押したときの濃い青 */
+            --text-main: #1e293b;       /* 全体の文字色（濃いグレー） */
+            --text-muted: #64748b;      /* ラベルなどの薄い文字色 */
+            --border-color: #cbd5e1;    /* 枠線の色 */
+        }
+
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            padding: 20px; 
+            max-width: 500px; 
+            margin: 0 auto; 
+            background: var(--bg-color); 
+            color: var(--text-main);
+        }
+        h2 { text-align: center; font-size: 22px; color: var(--primary-color); margin-bottom: 25px; }
+        .form-group { margin-bottom: 18px; }
+        label { display: block; margin-bottom: 6px; font-size: 14px; font-weight: 600; color: var(--text-muted); }
+        
+        /* 入力項目の共通デザイン */
+        select, input[type="text"], input[type="date"] { 
+            width: 100%; 
+            padding: 12px; 
+            font-size: 16px; 
+            border-radius: 8px; 
+            border: 1px solid var(--border-color); 
+            box-sizing: border-box; 
+            background: var(--card-bg);
+            color: var(--text-main);
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            outline: none;
+            transition: border 0.2s;
+        }
+        select:focus, input:focus { border-color: var(--primary-color); }
+
+        /* ボタンのデザイン */
+        button { 
+            width: 100%; 
+            padding: 14px; 
+            font-size: 16px; 
+            border-radius: 8px; 
+            background: var(--primary-color); 
+            color: white; 
+            border: none; 
+            cursor: pointer; 
+            margin-top: 15px; 
+            font-weight: bold; 
+            box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2);
+            transition: background 0.2s;
+        }
+        button:hover { background: var(--primary-hover); }
+        button:disabled { background: #94a3b8; cursor: not-allowed; box-shadow: none; }
+        
+        /* 履歴リストのデザイン */
+        .task-list { 
+            margin-top: 30px; 
+            background: var(--card-bg); 
+            padding: 20px; 
+            border-radius: 12px; 
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03); 
+        }
+        .task-list h3 { margin-top: 0; font-size: 16px; border-bottom: 2px solid var(--bg-color); padding-bottom: 10px; }
+        .task-item { padding: 12px 0; border-bottom: 1px solid #f1f5f9; font-size: 14px; line-height: 1.4; }
+        .task-item:last-child { border-bottom: none; }
+        .status-msg { margin-top: 12px; font-weight: bold; text-align: center; color: var(--primary-color); font-size: 14px; }
+    </style>
+</head>
+<body>
+
+    <h2>タスク スケジューラー</h2>
+    
+    <div class="form-group">
+        <label>登録する日付</label>
+        <input type="date" id="dateInput">
+    </div>
+
+    <div class="form-group">
+        <label>大項目</label>
+        <select id="largeSelect" onchange="updateMedium()"></select>
+    </div>
+
+    <div class="form-group">
+        <label>中項目</label>
+        <select id="mediumSelect" onchange="updateSmall()"></select>
+    </div>
+
+    <div class="form-group">
+        <label>小項目</label>
+        <select id="smallSelect"></select>
+    </div>
+
+    <div class="form-group">
+        <label>メモ（自由入力）</label>
+        <input type="text" id="memoInput" placeholder="空欄でもOK">
+    </div>
+
+    <button id="addBtn" onclick="addTaskToCalendar()">カレンダーへ追加</button>
+    <div id="statusMsg" class="status-msg"></div>
+
+    <div class="task-list">
+        <h3>今回送信したタスク</h3>
+        <div id="taskList"></div>
+    </div>
+
+    <script>
+        // 💡 共有していただいた最新のGASウェブアプリURLを組み込みました
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbzHzKiZYVjRHJDoAKvaWhfnrorAvZJp6AT7yKkR6Wl6Qzgh94cyn9vey37li5OZFdU/exec";
+
+        // 💡 製造・出張・事務の整理済みデータ
+        const data = {
+            "製造": {
+                "特産品": ["もずくのたまごP", "もずくのたまごH", "黒糖蜜", "黒糖キャラメルパウンドケーキ", "照島レーズンパウンドケーキ"],
+                "スーパー": ["スコーン", "シフォンケーキ", "ビスコッティ", "粉黒糖"],
+                "自販機": ["クッキーシュー", "シフォンケーキ", "カップケーキ", "チーズケーキ", "ティラミス", "ビスコッティ", "スコーン", "一黒糖"]
+            },
+            "出張": {
+                "買い物": ["イオン", "業務スーパー", "Aプライス", "かねひで"],
+                "納品": ["許田", "大宜見", "アグリパーク", "羽地の駅", "ハッピーモア"]
+            },
+            "事務": {
+                "通販": ["受注メール", "発送準備・起伝", "発送", "発送メール"],
+                "食事関連": ["朝食作り", "昼食作り", "夕食作り", "作り置き", "食材買い出し"],
+                "洗濯関連": ["洗濯機回す", "干す", "畳む", "アイロンがけ", "シーツ洗濯"],
+                "買い出し": ["日用品", "ドラッグストア", "スーパー", "100均", "モール"],
+                "手続き・書類": ["郵便局", "銀行", "役所", "マイナ関連", "書類整理"]
+            }
+        };
+
+        const dateInput = document.getElementById('dateInput');
+        const largeSelect = document.getElementById('largeSelect');
+        const mediumSelect = document.getElementById('mediumSelect');
+        const smallSelect = document.getElementById('smallSelect');
+        const memoInput = document.getElementById('memoInput');
+        const taskList = document.getElementById('taskList');
+        const statusMsg = document.getElementById('statusMsg');
+        const addBtn = document.getElementById('addBtn');
+
+        function init() {
+            // 💡 日本時間（JST）の今日の日付を正しく取得して初期値にセット
+            const now = new Date();
+            const yyyy = now.getFullYear();
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const dd = String(now.getDate()).padStart(2, '0');
+            dateInput.value = `${yyyy}-${mm}-${dd}`;
+
+            largeSelect.innerHTML = Object.keys(data).map(key => `<option value="${key}">${key}</option>`).join('');
+            updateMedium();
+        }
+
+        function updateMedium() {
+            const selectedLarge = largeSelect.value;
+            const mediums = Object.keys(data[selectedLarge] || {});
+            mediumSelect.innerHTML = mediums.map(key => `<option value="${key}">${key}</option>`).join('');
+            updateSmall();
+        }
+
+        function updateSmall() {
+            const selectedLarge = largeSelect.value;
+            const selectedMedium = mediumSelect.value;
+            const smalls = data[selectedLarge]?.[selectedMedium] || [];
+            smallSelect.innerHTML = smalls.map(val => `<option value="${val}">${val}</option>`).join('');
+        }
+
+        async function addTaskToCalendar() {
+            // 選択項目が不正な場合は処理を中断
+            if (!largeSelect.value || !mediumSelect.value || !smallSelect.value) {
+                statusMsg.style.color = "red";
+                statusMsg.innerText = "項目を正しく選択してください。";
+                return;
+            }
+
+            let taskText = `【${largeSelect.value}】${mediumSelect.value} ＞ ${smallSelect.value}`;
+            const memoText = memoInput.value.trim();
+            if (memoText !== "") {
+                taskText += ` (${memoText})`;
+            }
+            
+            addBtn.disabled = true;
+            statusMsg.style.color = "var(--primary-color)";
+            statusMsg.innerText = "登録中...";
+
+            try {
+                // GASへ日付とタスクを送信
+                const response = await fetch(GAS_URL, {
+                    method: "POST",
+                    mode: "cors",
+                    headers: { "Content-Type": "text/plain" },
+                    body: JSON.stringify({ 
+                        task: taskText,
+                        date: dateInput.value 
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`サーバーエラー: ${response.status}`);
+                }
+
+                const result = await response.json();
+
+                if (result.status === "success") {
+                    statusMsg.style.color = "green";
+                    statusMsg.innerText = "正常に登録されました！";
+                    
+                    // 履歴リストへ追加
+                    const div = document.createElement('div');
+                    div.className = 'task-item';
+                    div.innerText = `${dateInput.value} : ${taskText} (完了)`;
+                    taskList.appendChild(div);
+
+                    memoInput.value = "";
+                } else {
+                    statusMsg.style.color = "red";
+                    statusMsg.innerText = "エラー: " + (result.message || "未知のエラー");
+                }
+            } catch (error) {
+                statusMsg.style.color = "red";
+                statusMsg.innerText = "通信エラーが発生しました。";
+                console.error(error);
+            } finally {
+                addBtn.disabled = false;
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>
